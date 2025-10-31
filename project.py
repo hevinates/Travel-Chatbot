@@ -12,7 +12,11 @@ from pdf2image import convert_from_bytes
 from dataclasses import dataclass
 from chromadb.utils import embedding_functions
 
+
+# *************************
 # ****** CHUNKING *********
+# *************************
+
 
 exclude = ['./CLAUDE.md','./progress-tracker.md','./project-description.md']
 list_of_files = glob.glob('meridian-islands/**/*.md', recursive=True) 
@@ -79,22 +83,17 @@ for a in filtered_list:
     chunks: list = chunker.chunk(a)
     all_chunks.extend(chunks)
 
-# ******** OPENAI *********  
 
+# *************************
+# ******* CHROMA DB *******
+# *************************
+
+
+st.title('chat-gpt')
 load_dotenv("new.env")
-
-endpoint = os.getenv("ENDPOINT_URL")
-model_name = "gpt-4.1"
-
-subscription_key = os.getenv("API_KEY")
-api_version = "2024-12-01-preview"
-
-client = AzureOpenAI(
-    api_version=api_version,
-    azure_endpoint=endpoint,
-    api_key=subscription_key,
-)
-
+client = AzureOpenAI(api_version="2024-12-01-preview",
+                     api_key=os.getenv("API_KEY"),
+                       azure_endpoint=os.getenv("ENDPOINT_URL"))
 
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 default_ef = embedding_functions.DefaultEmbeddingFunction()
@@ -117,18 +116,59 @@ for chunk in all_chunks:
         "start_pos": chunk.start_pos,
         "end_pos": chunk.end_pos
     })
-collection.add(
-    ids=chunk_ids,
-    documents=docs,
-    metadatas=metas
-)
 
-    
-st.title('chat-gpt')
+if collection.count() == 0:
+    collection.add(
+        ids=chunk_ids,
+        documents=docs,
+        metadatas=metas
+    )
+
+
+# *************************
+# ***** STREAMLIT APP *****
+# *************************
+
+
+# 1) STREAMLIT PDF CONVERT
+
+
+all_output_text = []
+
+uploaded = st.file_uploader("Upload PDF", type=["pdf"])
+if uploaded:
+    # pdf to image
+    pdf_bytes = uploaded.read()
+    pages = convert_from_bytes(pdf_bytes, fmt="png")
+
+    for page in pages:  # image to base64
+        buf = BytesIO()
+        page.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+
+        content = [
+            {"type": "text", "text": "Transcribe exactly."
+            " Preserve line breaks."
+            " No summary."
+            " Just output text."},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+        ]
+
+        resp = client.chat.completions.create(
+            model="gpt-4.1",   
+            messages=[{"role": "user", "content": content}]
+        )
+
+        all_output_text.append(resp.choices[0].message.content.strip())
+
+
+# 2) STREAMLIT CHATBOT
 
 st.session_state["openai_model"] = "gpt-4.1"
 if "openai_model" not in st.session_state:
     st.session_state["openai_model"] = "gpt-4.1"
+st.write("Using deployment:", st.session_state["openai_model"])
+
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -137,12 +177,14 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-
 if prompt := st.chat_input("Say something"):
-
-    results = collection.query(query_texts=prompt, n_results=3)
     
-    user_msg = f"{prompt}\nhere is the needed data: \n{collection}"
+    user_msg = f"{prompt}\n\nHere is the uploaded file, use this if uploaded, else nothing to mention:\n{all_output_text}"
+
+    # important
+    results = collection.query(query_texts=[user_msg], n_results=3)
+    context = "\n\n".join(results["documents"][0])
+
    
     st.session_state.messages.append({"role": "user", "content": user_msg})
 
@@ -154,13 +196,19 @@ if prompt := st.chat_input("Say something"):
             model=st.session_state["openai_model"],
             messages=[
                 {"role": "system", "content": "Start giving advices when you are asked."
-                "Use the needed data if user asks about meridian islands."
-                "Do not mention meridian islands file."
+                "Do not talk about travelling without asking."
                 "You are a helpful and experienced tourist guide when you are asked about travelling. "
-                "Give 4-5 places."
+                "Give 8-10 places."
+                "List it simply but also make it eye-catching."
+                "Consider the length of trip such as day trip or more than one day. "
+                "The places and the distance between them should be sensible."
+                "Suggest 2-3 options for accomodation, some budge-friendly options and some safer places in that city."
+                "Show the transportation to that destination from the previous place and the transportation time."
+                "Try to find most sensible and effective travel time to sort places."
+                "Give the time that will be spent there approximately."
                 "Give most important 3 tips and the end below 'Tips' title."
-                "Give the most common phrases in that place's official language that can a tourist might need."
-                "Also give languages that are spoken in that place."
+                "Give the common greetings in that place's official language that can a tourist might need."
+                "Use this context if user mentions 'meridian islands' or 'meridian island' " + context
                 }
             ] + [
                 {"role": m["role"], "content": m["content"]}
@@ -170,5 +218,4 @@ if prompt := st.chat_input("Say something"):
         )
         response = st.write_stream(stream)
     st.session_state.messages.append({"role": "assistant", "content": response})
-
 

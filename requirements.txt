@@ -1,0 +1,6 @@
+openai
+python-dotenv
+pypdf
+pdf2image
+more_itertools
+chromadb
