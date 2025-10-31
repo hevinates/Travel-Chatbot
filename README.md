@@ -23,8 +23,7 @@ project/
 ├── requirements.txt # Dependencies
 ├── .gitignore # Files excluded from tracking
 ├── all_info.txt # Merged information about Meridian Island
-├── meridian-islands/ # Created travel dataset from scratch
-└── chroma_db/ # Local Chroma vector database
+├── meridian-islands/ # Artificial travel dataset
 ```
 ## ⚙️ Installation
 
