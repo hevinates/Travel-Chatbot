@@ -12,11 +12,7 @@ from pdf2image import convert_from_bytes
 from dataclasses import dataclass
 from chromadb.utils import embedding_functions
 
-
-# *************************
 # ****** CHUNKING *********
-# *************************
-
 
 exclude = ['./CLAUDE.md','./progress-tracker.md','./project-description.md']
 list_of_files = glob.glob('meridian-islands/**/*.md', recursive=True) 
@@ -83,11 +79,7 @@ for a in filtered_list:
     chunks: list = chunker.chunk(a)
     all_chunks.extend(chunks)
 
-
-# *************************
 # ******* CHROMA DB *******
-# *************************
-
 
 st.title('chat-gpt')
 load_dotenv("new.env")
@@ -124,14 +116,9 @@ if collection.count() == 0:
         metadatas=metas
     )
 
-
-# *************************
 # ***** STREAMLIT APP *****
-# *************************
-
 
 # 1) STREAMLIT PDF CONVERT
-
 
 all_output_text = []
 
@@ -160,7 +147,6 @@ if uploaded:
         )
 
         all_output_text.append(resp.choices[0].message.content.strip())
-
 
 # 2) STREAMLIT CHATBOT
 
